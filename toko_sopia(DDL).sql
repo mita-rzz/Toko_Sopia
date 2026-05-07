@@ -83,7 +83,7 @@ CREATE TABLE detail_transaksi (
 
 
 
-SHOW TABLES;
+
 
 
 

@@ -13,3 +13,6 @@ JOIN kasir k ON t.id_kasir = k.id_kasir
 JOIN barang b ON dt.id_barang=b.id_barang
 WHERE t.id_transaksi=1
 ORDER BY dt.id_transaksi  ASC;
+
+
+DROP TRIGGER pengurangan_stok_otomatis;
