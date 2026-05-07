@@ -4,7 +4,7 @@ session_start(); // <-- Tambahkan titik koma di sini
 $host = "localhost";
 $username = "root";
 $password = "";
-$dbname = "toko_sopia";
+$dbname = "tokosopia";
 
 try {
     $conn = new PDO(
