@@ -1,24 +1,14 @@
 <?php
-session_start(); // <-- Tambahkan titik koma di sini
+// config/database.php
 
 $host = "localhost";
-$username = "root";
-$password = "";
-$dbname = "tokosopia";
+$user = "root";
+$pass = ""; // Sesuaikan dengan password database Anda
+$db  = "tokosopia";
 
-try {
-    $conn = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8",
-        $username,
-        $password
-    );
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
-    // echo "Koneksi database berhasil!"; 
-    // Catatan: Sebaiknya baris echo di atas dihapus atau di-comment jika aplikasi sudah berjalan normal, 
-    // agar teks ini tidak bocor dan merusak tampilan HTML di halaman public.
-    
-} catch (PDOException $e) {
-    die("Koneksi database gagal: " . $e->getMessage());
+$conn = mysqli_connect($host, $user, $pass, $db);
+
+if (!$conn) {
+die("Koneksi database gagal: " . mysqli_connect_error());
 }
 ?>

@@ -1,130 +1,632 @@
 <?php
-require_once '../config/database.php';
+// Memanggil file koneksi database
+// Pastikan path-nya benar. Jika database.php ada di dalam folder config, gunakan: require 'config/database.php';
+require '../config/database.php';
 
-// Fitur 3: Search Barang menggunakan Prepared Statement
-$search = isset($_GET['search']) ? $_GET['search'] : '';
+// Proses AJAX untuk pembayaran
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'proses_pembayaran') {
+    header('Content-Type: application/json');
+    
+    $cart = json_decode($_POST['cart'], true);
+    $bayar = isset($_POST['bayar']) ? (int)$_POST['bayar'] : 0;
+    
+    if (empty($cart)) {
+        echo json_encode(['status' => 'error', 'message' => 'Keranjang kosong!']);
+        exit;
+    }
+    
+    // Validasi total
+    $total = 0;
+    foreach ($cart as $item) {
+        $total += $item['harga'] * $item['qty'];
+    }
+    
+    if ($bayar < $total) {
+        echo json_encode(['status' => 'error', 'message' => 'Transaksi dibatalkan: Uang bayar kurang dari total belanja!']);
+        exit;
+    }
+    
+    $conn->begin_transaction();
+    try {
+        foreach ($cart as $item) {
+            $id_barang = (int)$item['id'];
+            $qty = (int)$item['qty'];
+            
+            // Cek stok saat ini
+            $stmt = $conn->prepare("SELECT stok, nama_barang FROM barang WHERE id_barang = ? FOR UPDATE");
+            $stmt->bind_param("i", $id_barang);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $row = $result->fetch_assoc();
+            
+            if (!$row) {
+                throw new Exception("Barang tidak ditemukan: " . $item['nama']);
+            }
+            
+            if ($row['stok'] < $qty) {
+                throw new Exception("Stok tidak cukup untuk barang: " . $row['nama_barang']);
+            }
+            
+            // Update stok
+            $new_stok = $row['stok'] - $qty;
+            $stmt_update = $conn->prepare("UPDATE barang SET stok = ? WHERE id_barang = ?");
+            $stmt_update->bind_param("ii", $new_stok, $id_barang);
+            $stmt_update->execute();
+        }
+        
+        $conn->commit();
+        echo json_encode(['status' => 'success', 'message' => 'Pembayaran berhasil! Stok telah diperbarui.']);
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+    }
+    exit;
+}
 
-$sql_produk = "SELECT * FROM barang WHERE nama_barang LIKE :search";
-$stmt_produk = $conn->prepare($sql_produk);
-$stmt_produk->execute(['search' => "%$search%"]);
-$result_produk = $stmt_produk->fetchAll(PDO::FETCH_ASSOC);
+// Mengambil data barang dari database
+$sql_barang = "SELECT * FROM barang ORDER BY id_barang DESC";
+$result_barang = $conn->query($sql_barang);
 ?>
 
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>POS Toko Sopia</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kasir - Toko Sopia</title>
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        body { font-family: sans-serif; background: #f4f4f9; padding: 20px; }
-        .container { display: flex; gap: 20px; max-width: 1200px; margin: auto; }
-        .kiri, .kanan { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .kiri { flex: 2; } .kanan { flex: 1; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-        th { background: #2c3e50; color: white; }
-        .btn { padding: 5px 10px; color: white; text-decoration: none; border-radius: 4px; border: none; cursor: pointer; }
-        .btn-add { background: #27ae60; }
-        .btn-del { background: #e74c3c; }
-        .btn-update { background: #f39c12; }
-        .alert { padding: 10px; background: #dff0d8; color: #3c763d; margin-bottom: 15px; border-radius: 4px; }
-        .alert-error { background: #f2dede; color: #a94442; }
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        body {
+            background-color: #f4f6f9;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ================= SIDEBAR ================= */
+        .sidebar {
+            width: 80px;
+            background-color: #ffffff;
+            height: 100%;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 20px;
+            position: fixed;
+            z-index: 100;
+        }
+
+        .logo-menu {
+            font-size: 28px;
+            color: #005371;
+            margin-bottom: 40px;
+            cursor: pointer;
+        }
+
+        .nav-item {
+            position: relative;
+            margin-bottom: 20px;
+            text-decoration: none;
+            color: #757575;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .nav-item i {
+            font-size: 24px;
+        }
+
+        .nav-item.active {
+            background: linear-gradient(90deg, #22a699, #005371);
+            color: #ffffff;
+            box-shadow: 0 4px 10px rgba(34, 166, 153, 0.4);
+        }
+
+        .nav-item:hover:not(.active) {
+            background-color: #f0f0f0;
+            color: #22a699;
+        }
+
+        .tooltip {
+            position: absolute;
+            left: 70px;
+            background-color: #333;
+            color: #fff;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s ease;
+            transform: translateX(-10px);
+            z-index: 200;
+        }
+
+        .tooltip::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: -4px;
+            transform: translateY(-50%);
+            border-width: 5px;
+            border-style: solid;
+            border-color: transparent #333 transparent transparent;
+        }
+
+        .nav-item:hover .tooltip {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        /* ================= MAIN CONTENT ================= */
+        .main-content {
+            margin-left: 80px;
+            padding: 20px;
+            width: calc(100% - 80px);
+            display: flex;
+            gap: 20px;
+        }
+
+        /* Area Kiri: Daftar Produk & Search */
+        .produk-area {
+            flex: 7;
+            background: #fff;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        /* Form Pencarian */
+        .search-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+
+        .search-container i {
+            position: absolute;
+            top: 50%;
+            left: 15px;
+            transform: translateY(-50%);
+            color: #888;
+            font-size: 20px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 20px 12px 45px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            font-size: 14px;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        .search-input:focus {
+            border-color: #22a699;
+            box-shadow: 0 0 8px rgba(34, 166, 153, 0.2);
+        }
+
+        .grid-produk {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 20px;
+        }
+
+        .card-produk {
+            border: 1px solid #eee;
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .card-produk:hover {
+            border-color: #22a699;
+            box-shadow: 0 4px 10px rgba(34, 166, 153, 0.1);
+        }
+
+        .img-placeholder {
+            width: 100%;
+            height: 120px;
+            background-color: #f0f0f0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #aaa;
+            font-size: 40px;
+        }
+
+        .nama-barang { font-size: 14px; font-weight: 500; color: #333; margin-bottom: 5px; }
+        .harga-barang { font-size: 16px; font-weight: 700; color: #005371; }
+        .stok-barang { font-size: 12px; color: #757575; margin-top: 5px;}
+
+        /* Area Kanan: Keranjang/Transaksi */
+        .keranjang-area {
+            flex: 3;
+            background: #fff;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .keranjang-list {
+            flex-grow: 1;
+            overflow-y: auto;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 20px;
+        }
+
+        .item-keranjang {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px dashed #eee;
+        }
+
+        /* Form Pembayaran */
+        .payment-section {
+            margin-bottom: 20px;
+            background: #f9fbfd;
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid #eee;
+        }
+
+        .form-group {
+            margin-bottom: 12px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 6px;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: 0.3s;
+        }
+
+        .form-control:focus {
+            border-color: #005371;
+        }
+
+        .total-area div {
+            display: flex;
+            justify-content: space-between;
+            font-size: 15px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 5px;
+        }
+
+        .total-area .grand-total {
+            font-size: 18px;
+            font-weight: 700;
+            color: #005371;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed #ccc;
+        }
+
+        .btn-bayar {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(90deg, #22a699, #005371);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .btn-bayar:hover {
+            opacity: 0.9;
+            box-shadow: 0 4px 15px rgba(34, 166, 153, 0.4);
+        }
+
     </style>
 </head>
 <body>
 
-    <h1 style="text-align:center;">Kasir Toko Sopia</h1>
-
-    <?php if(isset($_SESSION['pesan'])): ?>
-        <div class="alert"><?= $_SESSION['pesan']; unset($_SESSION['pesan']); ?></div>
-    <?php endif; ?>
-    <?php if(isset($_SESSION['error'])): ?>
-        <div class="alert alert-error"><?= $_SESSION['error']; unset($_SESSION['error']); ?></div>
-    <?php endif; ?>
-
-    <div class="container">
-        <!-- Bagian Kiri: Daftar Produk -->
-        <div class="kiri">
-            <h2>Daftar Barang</h2>
-            
-            <!-- Fitur 3: Form Search -->
-            <form method="GET" action="index.php" style="margin-bottom: 15px;">
-                <input type="text" name="search" placeholder="Cari nama barang..." value="<?= htmlspecialchars($search) ?>" style="padding: 8px; width: 60%;">
-                <button type="submit" class="btn btn-add">Cari</button>
-                <a href="index.php" class="btn btn-update">Reset</a>
-            </form>
-
-            <table>
-                <tr>
-                    <th>Nama Barang</th>
-                    <th>Harga</th>
-                    <th>Stok</th>
-                    <th>Aksi</th>
-                </tr>
-                <?php foreach($result_produk as $row): ?>
-                <tr>
-                    <td><?= htmlspecialchars($row['nama_barang']) ?></td>
-                    <td>Rp <?= number_format($row['harga'], 0, ',', '.') ?></td>
-                    <td>
-                        <!-- Fitur 2: Update Stok Manual -->
-                        <form action="../process/stock_process.php" method="POST" style="display:inline;">
-                            <input type="hidden" name="id_barang" value="<?= $row['id_barang'] ?>">
-                            <input type="number" name="stok_baru" value="<?= $row['stok'] ?>" style="width: 50px;">
-                            <button type="submit" class="btn btn-update" style="font-size: 12px;">Update</button>
-                        </form>
-                    </td>
-                    <td>
-                        <!-- Fitur 1: Tambah ke Keranjang -->
-                        <a href="../process/cart_process.php?action=add&id=<?= $row['id_barang'] ?>" class="btn btn-add">Tambahkan</a>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </table>
+    <div class="sidebar">
+        <div class="logo-menu">
+            <i class='bx bx-cart-alt'></i>
         </div>
+        
+        <a href="#" class="nav-item active">
+            <i class='bx bx-laptop'></i> <span class="tooltip">Kasir / Transaksi</span>
+        </a>
 
-        <!-- Bagian Kanan: Keranjang -->
-        <div class="kanan">
-            <h2>Keranjang Transaksi</h2>
-            <table>
-                <tr>
-                    <th>Barang</th>
-                    <th>Qty</th>
-                    <th>Subtotal</th>
-                    <th>Aksi</th>
-                </tr>
-                <?php 
-                $total_belanja = 0;
-                if(!empty($_SESSION['cart'])): 
-                    foreach($_SESSION['cart'] as $id => $item): 
-                        $subtotal = $item['harga'] * $item['qty'];
-                        $total_belanja += $subtotal;
-                ?>
-                <tr>
-                    <td><?= htmlspecialchars($item['nama']) ?></td>
-                    <td><?= $item['qty'] ?></td>
-                    <td>Rp <?= number_format($subtotal, 0, ',', '.') ?></td>
-                    <td>
-                        <!-- Fitur 4: Hapus dari keranjang -->
-                        <a href="../process/cart_process.php?action=delete&id=<?= $id ?>" class="btn btn-del">Hapus</a>
-                    </td>
-                </tr>
-                <?php 
-                    endforeach; 
-                else: 
-                ?>
-                <tr><td colspan="4" style="text-align:center;">Keranjang kosong</td></tr>
-                <?php endif; ?>
-            </table>
-            
-            <h3 style="text-align:right;">Total: Rp <?= number_format($total_belanja, 0, ',', '.') ?></h3>
-            
-            <?php if(!empty($_SESSION['cart'])): ?>
-                <form action="../process/checkout.php" method="POST">
-                    <button type="submit" class="btn btn-add" style="width: 100%; padding: 15px; font-size: 16px;">Commit Transaksi</button>
-                </form>
-            <?php endif; ?>
-        </div>
+        <a href="#" class="nav-item">
+            <i class='bx bx-box'></i>
+            <span class="tooltip">Data Barang</span>
+        </a>
+
+        <a href="#" class="nav-item">
+            <i class='bx bx-file'></i>
+            <span class="tooltip">Laporan</span>
+        </a>
+
+        <a href="#" class="nav-item" style="margin-top: auto; margin-bottom: 30px;">
+            <i class='bx bx-cog'></i>
+            <span class="tooltip">Pengaturan</span>
+        </a>
     </div>
 
+    <div class="main-content">
+        
+        <div class="produk-area">
+            <h2 class="header-title">Menu Kasir</h2>
+            
+            <div class="search-container">
+                <i class='bx bx-search'></i>
+                <input type="text" class="search-input" placeholder="Cari nama barang atau scan barcode...">
+            </div>
+            
+            <div class="grid-produk">
+                <?php
+                if ($result_barang && $result_barang->num_rows > 0) {
+                    while($row = $result_barang->fetch_assoc()) {
+                ?>
+                        <div class="card-produk" onclick="addToCart(<?= $row['id_barang'] ?>, <?= htmlspecialchars(json_encode($row['nama_barang']), ENT_QUOTES, 'UTF-8') ?>, <?= $row['harga'] ?>)">
+                            <div class="img-placeholder"><i class='bx bx-package'></i></div>
+                            <div class="nama-barang"><?= htmlspecialchars($row['nama_barang']) ?></div>
+                            <div class="harga-barang">Rp <?= number_format($row['harga'], 0, ',', '.') ?></div>
+                            <div class="stok-barang">Stok: <?= htmlspecialchars($row['stok']) ?></div>
+                        </div>
+                <?php
+                    }
+                } else {
+                    echo "<p style='color: #888; grid-column: 1 / -1;'>Data barang belum ada di database. Silakan isi tabel barang terlebih dahulu.</p>";
+                }
+                ?>
+            </div>
+        </div>
+
+        <div class="keranjang-area">
+            <h2 class="header-title" style="font-size: 20px;">Pesanan Saat Ini</h2>
+            
+            <div class="keranjang-list">
+                <div style="text-align: center; color: #aaa; margin-top: 50px;">
+                    <i class='bx bx-cart' style="font-size: 40px;"></i>
+                    <p>Keranjang masih kosong</p>
+                </div>
+            </div>
+
+            <div class="payment-section">
+                <div class="form-group">
+                    <label for="metode">Metode Pembayaran</label>
+                    <select id="metode" class="form-control" name="metode_pembayaran">
+                        <option value="Tunai">Tunai</option>
+                        <option value="QRIS">QRIS / E-Wallet</option>
+                        <option value="Transfer Bank">Transfer Bank</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="bayar">Uang Bayar (Rp)</label>
+                    <input type="number" id="bayar" class="form-control" placeholder="Masukkan nominal bayar...">
+                </div>
+            </div>
+
+            <div class="total-area">
+                <div>
+                    <span>Subtotal</span>
+                    <span id="subtotal">Rp 0</span>
+                </div>
+                <div>
+                    <span>Kembalian</span>
+                    <span id="kembalian" style="color: #e74c3c;">Rp 0</span>
+                </div>
+                <div class="grand-total">
+                    <span>Total Tagihan</span>
+                    <span id="total-tagihan">Rp 0</span>
+                </div>
+            </div>
+
+            <button class="btn-bayar" style="margin-top: 15px;" onclick="prosesPembayaran()">Proses Pembayaran</button>
+        </div>
+
+    </div>
+
+    <script>
+        let cart = [];
+
+        function formatRupiah(angka) {
+            return 'Rp ' + angka.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        }
+
+        function addToCart(id, nama, harga) {
+            let existingItem = cart.find(item => item.id === id);
+            if (existingItem) {
+                existingItem.qty++;
+            } else {
+                cart.push({ id: id, nama: nama, harga: harga, qty: 1 });
+            }
+            renderCart();
+        }
+
+        function increaseQty(id) {
+            let item = cart.find(i => i.id === id);
+            if (item) {
+                item.qty++;
+                renderCart();
+            }
+        }
+
+        function decreaseQty(id) {
+            let itemIndex = cart.findIndex(item => item.id === id);
+            if (itemIndex > -1) {
+                if (cart[itemIndex].qty > 1) {
+                    cart[itemIndex].qty--;
+                } else {
+                    cart.splice(itemIndex, 1);
+                }
+            }
+            renderCart();
+        }
+
+        function renderCart() {
+            let cartContainer = document.querySelector('.keranjang-list');
+            
+            if (cart.length === 0) {
+                cartContainer.innerHTML = `
+                    <div style="text-align: center; color: #aaa; margin-top: 50px;">
+                        <i class='bx bx-cart' style="font-size: 40px;"></i>
+                        <p>Keranjang masih kosong</p>
+                    </div>
+                `;
+                updateTotals();
+                return;
+            }
+
+            let html = '';
+            cart.forEach(item => {
+                let totalHargaItem = item.harga * item.qty;
+                html += `
+                <div class="item-keranjang" style="padding: 10px; border-bottom: 1px dashed #eee; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 14px; font-weight: 500; color: #333;">${item.nama}</div>
+                        <div style="font-size: 12px; color: #757575;">${formatRupiah(item.harga)} x ${item.qty}</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 14px; font-weight: 600; color: #005371; margin-bottom: 5px;">${formatRupiah(totalHargaItem)}</div>
+                        <div style="display: flex; gap: 5px; justify-content: flex-end;">
+                            <button type="button" onclick="decreaseQty(${item.id})" style="background: #e74c3c; color: white; border: none; border-radius: 4px; width: 20px; height: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">-</button>
+                            <span style="font-size: 13px; width: 20px; text-align: center;">${item.qty}</span>
+                            <button type="button" onclick="increaseQty(${item.id})" style="background: #22a699; color: white; border: none; border-radius: 4px; width: 20px; height: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center;">+</button>
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            cartContainer.innerHTML = html;
+            updateTotals();
+        }
+
+        function updateTotals() {
+            let total = cart.reduce((sum, item) => sum + (item.harga * item.qty), 0);
+            
+            document.getElementById('subtotal').innerText = formatRupiah(total);
+            document.getElementById('total-tagihan').innerText = formatRupiah(total);
+            
+            calculateChange();
+        }
+
+        function calculateChange() {
+            let total = cart.reduce((sum, item) => sum + (item.harga * item.qty), 0);
+            let bayarInput = document.getElementById('bayar').value;
+            let bayar = bayarInput ? parseInt(bayarInput) : 0;
+            
+            let kembalian = bayar - total;
+            let kembalianElement = document.getElementById('kembalian');
+            
+            if (kembalian >= 0 && bayar >= total) {
+                kembalianElement.innerText = formatRupiah(kembalian);
+                kembalianElement.style.color = '#22a699';
+            } else {
+                kembalianElement.innerText = formatRupiah(kembalian < 0 ? 0 : kembalian);
+                kembalianElement.style.color = '#e74c3c';
+            }
+        }
+
+        document.getElementById('bayar').addEventListener('input', calculateChange);
+
+        function prosesPembayaran() {
+            if (cart.length === 0) {
+                Swal.fire({ icon: 'warning', title: 'Oops...', text: 'Keranjang masih kosong!' });
+                return;
+            }
+            
+            let total = cart.reduce((sum, item) => sum + (item.harga * item.qty), 0);
+            let bayarInput = document.getElementById('bayar').value;
+            let bayar = bayarInput ? parseInt(bayarInput) : 0;
+            
+            if (bayar < total) {
+                Swal.fire({ icon: 'error', title: 'Transaksi Dibatalkan', text: 'Uang bayar kurang dari total belanja!' });
+                return;
+            }
+            
+            let formData = new FormData();
+            formData.append('action', 'proses_pembayaran');
+            formData.append('cart', JSON.stringify(cart));
+            formData.append('bayar', bayar);
+            
+            fetch('', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    Swal.fire({ icon: 'success', title: 'Berhasil!', text: data.message, showConfirmButton: false, timer: 2000 }).then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire({ icon: 'error', title: 'Gagal', text: data.message });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                Swal.fire({ icon: 'error', title: 'Oops...', text: 'Terjadi kesalahan saat memproses pembayaran.' });
+            });
+        }
+
+        document.querySelector('.search-input').addEventListener('input', function(e) {
+            let searchTerm = e.target.value.toLowerCase();
+            let cards = document.querySelectorAll('.card-produk');
+            
+            cards.forEach(card => {
+                let name = card.querySelector('.nama-barang').innerText.toLowerCase();
+                if (name.includes(searchTerm)) {
+                    card.style.display = '';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        });
+    </script>
 </body>
 </html>
