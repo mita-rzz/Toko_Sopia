@@ -1,12 +1,11 @@
 <?php
-require_once '../config/database.php';
+include '../config/database.php';
 
 if(isset($_GET['action']) && isset($_GET['id'])) {
     $action = $_GET['action'];
     $id = $_GET['id'];
 
     if($action == 'add') {
-        // Query dengan PDO Prepared Statement
         $sql = "SELECT * FROM barang WHERE id_barang = :id";
         $stmt = $conn->prepare($sql);
         $stmt->execute(['id' => $id]);
