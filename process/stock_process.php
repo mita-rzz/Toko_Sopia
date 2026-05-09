@@ -6,10 +6,10 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     $stok_baru = $_POST['stok_baru'];
 
     if(is_numeric($stok_baru) && $stok_baru >= 0) {
-        $sql = "UPDATE tb_produk SET stok = :stok_baru WHERE id_produk = :id";
+        $sql = "UPDATE barang SET stok = :stok WHERE id_barang = :id_barang";
         $stmt = $conn->prepare($sql);
         
-        if($stmt->execute(['stok_baru' => $stok_baru, 'id' => $id])) {
+        if($stmt->execute(['stok' => $stok_baru, 'id_barang' => $id])) {
             $_SESSION['pesan'] = "Stok berhasil diupdate!";
         } else {
             $_SESSION['error'] = "Gagal update stok.";

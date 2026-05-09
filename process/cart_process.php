@@ -12,8 +12,6 @@ if(isset($_GET['action']) && isset($_GET['id'])) {
         
         if($stmt->rowCount() > 0) {
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            // Periksa apakah stok cukup
             $qty_sekarang = isset($_SESSION['cart'][$id]) ? $_SESSION['cart'][$id]['qty'] : 0;
             if($row['stok'] > $qty_sekarang) {
                 if(isset($_SESSION['cart'][$id])) {

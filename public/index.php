@@ -4,7 +4,7 @@ include '../config/database.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'proses_pembayaran') {
     header('Content-Type: application/json');
 
-    $cart = json_decode($_POST['cart'], true);
+    $cart  = json_decode($_POST['cart'], true);
     $bayar = isset($_POST['bayar']) ? (int)$_POST['bayar'] : 0;
 
     if (empty($cart)) {
@@ -22,45 +22,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
 
-    $conn->begin_transaction();
-    try {
-        foreach ($cart as $item) {
-            $id_barang = (int)$item['id'];
-            $qty = (int)$item['qty'];
+    $checkout_cart   = $cart;
+    $checkout_bayar  = $bayar;
+    $checkout_metode = isset($_POST['metode']) ? $_POST['metode'] : 'Tunai';
 
-            // Cek stok saat ini
-            $stmt = $conn->prepare("SELECT stok, nama_barang FROM barang WHERE id_barang = ? FOR UPDATE");
-            $stmt->bind_param("i", $id_barang);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $row = $result->fetch_assoc();
+    include '../process/checkout.php';
 
-            if (!$row) {
-                throw new Exception("Barang tidak ditemukan: " . $item['nama']);
-            }
-
-            if ($row['stok'] < $qty) {
-                throw new Exception("Stok tidak cukup untuk barang: " . $row['nama_barang']);
-            }
-
-            // Update stok
-            $new_stok = $row['stok'] - $qty;
-            $stmt_update = $conn->prepare("UPDATE barang SET stok = ? WHERE id_barang = ?");
-            $stmt_update->bind_param("ii", $new_stok, $id_barang);
-            $stmt_update->execute();
-        }
-
-        $conn->commit();
-        echo json_encode(['status' => 'success', 'message' => 'Pembayaran berhasil! Stok telah diperbarui.']);
-    } catch (Exception $e) {
-        $conn->rollback();
-        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
-    }
+    echo json_encode($checkout_result);
     exit;
 }
 
-$sql_barang = "SELECT * FROM barang ORDER BY id_barang DESC";
-$result_barang = $conn->query($sql_barang);
+$stmt_barang = $conn->prepare("SELECT * FROM barang ORDER BY id_barang DESC");
+$stmt_barang->execute();
+$result_barang = $stmt_barang->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -381,13 +355,8 @@ $result_barang = $conn->query($sql_barang);
             <i class='bx bx-laptop'></i> <span class="tooltip">Kasir / Transaksi</span>
         </a>
 
-        <a href="#" class="nav-item">
-            <i class='bx bx-box'></i>
-            <span class="tooltip">Data Barang</span>
-        </a>
-
-        <a href="#" class="nav-item">
-            <i class='bx bx-file'></i>
+        <a href="laporan.php" class="nav-item">
+            <i class='bx bx-bar-chart-alt-2'></i>
             <span class="tooltip">Laporan</span>
         </a>
     </div>
@@ -404,8 +373,8 @@ $result_barang = $conn->query($sql_barang);
 
             <div class="grid-produk">
                 <?php
-                if ($result_barang && $result_barang->num_rows > 0) {
-                    while ($row = $result_barang->fetch_assoc()) {
+                if (!empty($result_barang)) {
+                    foreach ($result_barang as $row) {
                 ?>
                         <div class="card-produk" onclick="addToCart(<?= $row['id_barang'] ?>, <?= htmlspecialchars(json_encode($row['nama_barang']), ENT_QUOTES, 'UTF-8') ?>, <?= $row['harga'] ?>)">
                             <div class="img-placeholder"><i class='bx bx-package'></i></div>
