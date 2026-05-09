@@ -45,7 +45,7 @@ Menyimpan data pelanggan yang melakukan transaksi.
 Menyimpan data akun kasir yang mengoperasikan sistem POS.
 
 | Kolom          | Tipe Data    | Keterangan                  |
-|----------------|--------------|-----------------------------||
+|----------------|--------------|-----------------------------|
 | `id_kasir`     | INT (PK, AI) | ID unik kasir               |
 | `username`     | VARCHAR      | Username login kasir        |
 | `password`     | VARCHAR      | Password (terenkripsi)      |
@@ -94,7 +94,7 @@ Menyimpan data header setiap transaksi penjualan.
 Menyimpan rincian barang per transaksi (relasi many-to-many antara transaksi dan barang).
 
 | Kolom                  | Tipe Data    | Keterangan                         |
-|------------------------|--------------|------------------------------------||
+|------------------------|--------------|------------------------------------|
 | `id_detail_transaksi`  | INT (PK, AI) | ID unik detail transaksi           |
 | `id_transaksi`         | INT (FK)     | Relasi ke tabel `transaksi`        |
 | `id_barang`            | INT (FK)     | Relasi ke tabel `barang`           |
