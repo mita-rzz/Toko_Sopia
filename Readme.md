@@ -4,9 +4,7 @@ Sistem **Point of Sale (POS)** berbasis web untuk Toko Sopia dirancang untuk mem
 
 Fitur utama aplikasi ini meliputi:
 **Kasir / Checkout** yakni proses transaksi penjualan dengan pemilihan barang, metode pembayaran, dan kalkulasi kembalian otomatis.
-**Manajemen Stok** yakni stok barang otomatis berkurang setiap kali transaksi berhasil diproses.
 **Laporan Penjualan** yakni grafik penjualan harian, bulanan, dan 10 produk terlaris menggunakan Chart.js.
-**Transaksi Aman** yakni setiap checkout menggunakan database transaction (BEGIN / COMMIT / ROLLBACK) sehingga data selalu konsisten.
 
 ---
 
