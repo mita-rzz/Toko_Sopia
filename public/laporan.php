@@ -301,11 +301,15 @@
 
 <body>
     <div class="sidebar">
+        <i class='bx bx-store logo-menu'></i>
         <a href="index.php" class="nav-item">
             <i class='bx bx-laptop'></i>
             <span class="tooltip">Kasir / Transaksi</span>
         </a>
-
+        <a href="barangView.php" class="nav-item">
+            <i class='bx bx-package'></i>
+            <span class="tooltip">Manajemen Barang</span>
+        </a>
         <a href="laporan.php" class="nav-item active">
             <i class='bx bx-bar-chart-alt-2'></i>
             <span class="tooltip">Laporan</span>
